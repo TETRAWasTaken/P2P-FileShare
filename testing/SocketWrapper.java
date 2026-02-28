@@ -4,42 +4,59 @@ import java.io.*;
 import java.net.*;
 import testing.exceptions.SocketException;
 
-class SocketWrapper {
+public class SocketWrapper {
     private Socket socket;
     private String host;
     private int port;
     private Thread listener;
+    private PrintWriter out;
+    private BufferedReader in;
 
     public SocketWrapper(String host, int port) throws SocketException {
         this.host = host;
         this.port = port;
         System.out.println("Creating socket to " + host + ":" + port);
-        try (socket = new Socket()){
+        try {
+            socket = new Socket();
             SocketAddress socketAddress = new InetSocketAddress(host, port);
             socket.connect(socketAddress, 5000); // 5 second timeout
+            out = new PrintWriter(socket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             System.out.println("Socket created successfully.");
         } catch (IOException e) {
             throw new SocketException("Failed to create socket: " + e.getMessage());
         }
     }
 
+    public SocketWrapper(Socket socket) throws SocketException {
+        this.socket = socket;
+        this.host = socket.getInetAddress().getHostAddress();
+        this.port = socket.getPort();
+        try {
+            out = new PrintWriter(socket.getOutputStream(), true);
+            in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            System.out.println("Socket wrapper initialized for accepted connection from " + host + ":" + port);
+        } catch (IOException e) {
+            throw new SocketException("Failed to initialize socket wrapper: " + e.getMessage());
+        }
+    }
+
     public void sendData(String data) throws SocketException {
         System.out.println("Sending data: " + data);
         try {
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
             out.println(data);
             System.out.println("Data sent successfully.");
-        } catch (IOException e) {
+        } catch (Exception e) {
             throw new SocketException("Failed to send data: " + e.getMessage());
         }
     }
 
     private void listen() throws SocketException {
         System.out.println("Listening for incoming data...");
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
+        try {
             String receivedData;
             while ((receivedData = in.readLine()) != null) {
-                System.out.println("Received data: " + receivedData);
+                System.out.println("Received: " + receivedData);
             }
         } catch (IOException e) {
             throw new SocketException("Failed to listen for data: " + e.getMessage());
