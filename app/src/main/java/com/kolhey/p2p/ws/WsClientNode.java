@@ -1,5 +1,6 @@
 package com.kolhey.p2p.ws;
 
+import com.kolhey.p2p.TransferTracker;
 import com.kolhey.p2p.crypto.WsSecurityManager;
 import com.kolhey.p2p.database.PeerDatabase;
 import io.netty.bootstrap.Bootstrap;
@@ -21,6 +22,7 @@ import io.netty.handler.codec.http.websocketx.WebSocketClientProtocolHandler;
 import io.netty.handler.codec.http.websocketx.WebSocketVersion;
 import io.netty.handler.ssl.SslContext;
 
+import java.io.File;
 import java.net.URI;
 
 public class WsClientNode {
@@ -33,7 +35,20 @@ public class WsClientNode {
         this.peerDatabase = peerDatabase;
     }
 
+    /** Connect to a peer without sending a file (connection test / future use). */
     public void connectAndSend(String targetIp, int targetPort) throws Exception {
+        connectAndSend(targetIp, targetPort, null, null);
+    }
+
+    /**
+     * Connect to a peer and send {@code fileToSend}.
+     * The file transfer starts automatically once the WebSocket handshake completes.
+     *
+     * @param fileToSend file to transfer; may be {@code null} to just connect
+     * @param tracker    transfer tracker for progress/notification; may be {@code null}
+     */
+    public void connectAndSend(String targetIp, int targetPort,
+                               File fileToSend, TransferTracker tracker) throws Exception {
         group = new NioEventLoopGroup();
         final SslContext sslCtx = WsSecurityManager.buildClientSslContext(peerDatabase);
 
@@ -52,19 +67,16 @@ public class WsClientNode {
                  p.addLast(sslCtx.newHandler(ch.alloc(), targetIp, targetPort));
                  p.addLast(new HttpClientCodec());
                  p.addLast(new HttpObjectAggregator(8192));
-                 
                  p.addLast(new WebSocketClientProtocolHandler(handshaker));
-                 
+
                  p.addLast(new SimpleChannelInboundHandler<Object>() {
                      @Override
-                     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) throws Exception {
+                     public void userEventTriggered(ChannelHandlerContext ctx, Object evt) {
                          if (evt == WebSocketClientProtocolHandler.ClientHandshakeStateEvent.HANDSHAKE_COMPLETE) {
-                             System.out.println("WSS Handshake Complete! Secure connection established.");
-                             // Now dynamically add our file transfer handler to start sending data
-                             ctx.pipeline().addLast(new WsFileTransferHandler(true));
-                             // Remove this setup handler since we don't need it anymore
-                             ctx.pipeline().remove(this); 
-                             // Trigger the handler's active state
+                             System.out.println("[WS] Handshake complete. Secure connection established.");
+                             // Add the file transfer handler; channelActive is fired below
+                             ctx.pipeline().addLast(new WsFileTransferHandler(true, fileToSend, tracker));
+                             ctx.pipeline().remove(this);
                              ctx.pipeline().fireChannelActive();
                          }
                      }
@@ -74,7 +86,7 @@ public class WsClientNode {
              }
          });
 
-        System.out.println("Attempting WSS connection to " + uri.toString() + "...");
+        System.out.println("[WS] Connecting to " + uri + " ...");
         clientChannel = b.connect(targetIp, targetPort).sync().channel();
     }
 

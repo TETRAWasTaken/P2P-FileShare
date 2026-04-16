@@ -13,7 +13,13 @@ public class FileIOService {
 
     private static final int CHUNK_SIZE = 64 * 1024; // 64KB chunks
     private FileOutputStream currentDownloadStream;
+    private String currentDownloadFileName;
     private long bytesReceived = 0;
+    private TransferCallback callback = TransferCallback.NOOP;
+
+    public void setCallback(TransferCallback callback) {
+        this.callback = callback != null ? callback : TransferCallback.NOOP;
+    }
 
     /**
      * Prepares a header ByteBuf to be sent before the file data.
@@ -45,12 +51,14 @@ public class FileIOService {
 
     /**
      * Writes incoming bytes to a file in the downloads folder.
+     * Fires {@link TransferCallback} progress and completion events.
      */
     public void saveChunk(String fileName, ByteBuf data, long totalSize) throws IOException {
         if (currentDownloadStream == null) {
             File downloadDir = new File("downloads");
             if (!downloadDir.exists()) downloadDir.mkdirs();
             currentDownloadStream = new FileOutputStream(new File(downloadDir, fileName));
+            currentDownloadFileName = fileName;
             bytesReceived = 0;
         }
 
@@ -58,10 +66,14 @@ public class FileIOService {
         data.readBytes(currentDownloadStream.getChannel(), bytesReceived, readableBytes);
         bytesReceived += readableBytes;
 
+        callback.onProgress(currentDownloadFileName, bytesReceived, totalSize);
+
         if (bytesReceived >= totalSize) {
             currentDownloadStream.close();
             currentDownloadStream = null;
-            System.out.println("File saved successfully: " + fileName);
+            String done = currentDownloadFileName;
+            currentDownloadFileName = null;
+            callback.onComplete(done);
         }
     }
 }

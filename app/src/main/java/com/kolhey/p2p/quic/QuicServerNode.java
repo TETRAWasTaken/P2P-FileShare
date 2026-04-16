@@ -1,5 +1,6 @@
 package com.kolhey.p2p.quic;
 
+import com.kolhey.p2p.TransferTracker;
 import com.kolhey.p2p.crypto.QuicSecurityManager;
 import com.kolhey.p2p.database.PeerDatabase;
 import io.netty.bootstrap.Bootstrap;
@@ -19,20 +20,29 @@ import java.net.InetSocketAddress;
 public class QuicServerNode {
 
     private static final boolean ALLOW_INSECURE_DEV_TLS = Boolean.getBoolean("p2p.allowInsecureDevTls");
-    
+
     private final String bindIp;
     private final int bindPort;
     private final PeerDatabase peerDatabase;
+    private final TransferTracker tracker;
     private Channel serverChannel;
     private NioEventLoopGroup group;
 
+    /** Constructor without tracker (for backward-compatibility / tests). */
     public QuicServerNode(String bindIp, int bindPort, PeerDatabase peerDatabase) {
-        this.bindIp = bindIp;
-        this.bindPort = bindPort;
-        this.peerDatabase = peerDatabase;
+        this(bindIp, bindPort, peerDatabase, null);
     }
 
-    public void start() 
+    /** Constructor with tracker for transfer notifications. */
+    public QuicServerNode(String bindIp, int bindPort, PeerDatabase peerDatabase,
+                          TransferTracker tracker) {
+        this.bindIp     = bindIp;
+        this.bindPort   = bindPort;
+        this.peerDatabase = peerDatabase;
+        this.tracker    = tracker;
+    }
+
+    public void start()
     throws Exception {
         group = new NioEventLoopGroup(1);
 
@@ -54,15 +64,13 @@ public class QuicServerNode {
                 @Override
                 public void channelActive(ChannelHandlerContext ctx) {
                     QuicChannel channel = (QuicChannel) ctx.channel();
-                    System.out.println("New connection from " + channel.remoteAddress());
+                    System.out.println("[QUIC] New connection from " + channel.remoteAddress());
                 }
             })
-
             .streamHandler(new ChannelInitializer<QuicStreamChannel>() {
                 @Override
                 protected void initChannel(QuicStreamChannel ch) {
-                    ch.pipeline().addLast(new FileTransferStreamHandler(false));
-                    System.out.println("New stream " + ch);
+                    ch.pipeline().addLast(new FileTransferStreamHandler(false, tracker));
                 }
             })
             .build();
@@ -75,9 +83,9 @@ public class QuicServerNode {
             .addListener(future -> {
                 if (future.isSuccess()) {
                     serverChannel = ((io.netty.channel.ChannelFuture) future).channel();
-                    System.out.println("QUIC server started on " + serverChannel.localAddress());
+                    System.out.println("[QUIC] Server started on " + serverChannel.localAddress());
                 } else {
-                    System.err.println("Failed to start QUIC server: " + future.cause());
+                    System.err.println("[QUIC] Failed to start server: " + future.cause());
                 }
             });
     }

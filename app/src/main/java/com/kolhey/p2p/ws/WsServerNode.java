@@ -1,5 +1,6 @@
 package com.kolhey.p2p.ws;
 
+import com.kolhey.p2p.TransferTracker;
 import com.kolhey.p2p.crypto.WsSecurityManager;
 import com.kolhey.p2p.database.PeerDatabase;
 import io.netty.bootstrap.ServerBootstrap;
@@ -19,19 +20,28 @@ public class WsServerNode {
     private final String bindIp;
     private final int bindPort;
     private final PeerDatabase peerDatabase;
+    private final TransferTracker tracker;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
 
+    /** Constructor without tracker (for backward-compatibility / tests). */
     public WsServerNode(String bindIp, int bindPort, PeerDatabase peerDatabase) {
-        this.bindIp = bindIp;
-        this.bindPort = bindPort;
+        this(bindIp, bindPort, peerDatabase, null);
+    }
+
+    /** Constructor with tracker for transfer notifications. */
+    public WsServerNode(String bindIp, int bindPort, PeerDatabase peerDatabase,
+                        TransferTracker tracker) {
+        this.bindIp     = bindIp;
+        this.bindPort   = bindPort;
         this.peerDatabase = peerDatabase;
+        this.tracker    = tracker;
     }
 
     public void start()
     throws Exception {
-        bossGroup = new NioEventLoopGroup();
+        bossGroup  = new NioEventLoopGroup();
         workerGroup = new NioEventLoopGroup();
 
         final SslContext sslContext = WsSecurityManager.buildServerSslContext(peerDatabase);
@@ -46,12 +56,12 @@ public class WsServerNode {
                     ch.pipeline().addLast(new HttpServerCodec());
                     ch.pipeline().addLast(new HttpObjectAggregator(65536));
                     ch.pipeline().addLast(new WebSocketServerProtocolHandler("/p2p"));
-                    ch.pipeline().addLast(new WsFileTransferHandler(false));
+                    ch.pipeline().addLast(new WsFileTransferHandler(false, null, tracker));
                 }
             });
 
-            serverChannel = b.bind(bindIp, bindPort).sync().channel();
-            System.out.println("WebSocket server started at ws://" + bindIp + ":" + bindPort + "/p2p");
+        serverChannel = b.bind(bindIp, bindPort).sync().channel();
+        System.out.println("[WS] Server started at wss://" + bindIp + ":" + bindPort + "/p2p");
     }
 
     public void stop() {
@@ -64,6 +74,6 @@ public class WsServerNode {
         if (workerGroup != null) {
             workerGroup.shutdownGracefully();
         }
-        System.out.println("WebSocket server stopped.");
+        System.out.println("[WS] Server stopped.");
     }
 }

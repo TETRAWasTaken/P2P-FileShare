@@ -1,5 +1,6 @@
 package com.kolhey.p2p.quic;
 
+import com.kolhey.p2p.TransferTracker;
 import com.kolhey.p2p.crypto.QuicSecurityManager;
 import com.kolhey.p2p.database.PeerDatabase;
 import io.netty.bootstrap.Bootstrap;
@@ -14,6 +15,7 @@ import io.netty.incubator.codec.quic.QuicClientCodecBuilder;
 import io.netty.incubator.codec.quic.QuicStreamChannel;
 import io.netty.incubator.codec.quic.QuicStreamType;
 
+import java.io.File;
 import java.net.InetSocketAddress;
 
 public class QuicClientNode {
@@ -27,7 +29,21 @@ public class QuicClientNode {
         this.peerDatabase = peerDatabase;
     }
 
+    /** Connect to a peer without sending a file (connection test / future use). */
     public void connectAndSend(String targetIp, int targetPort) throws Exception {
+        connectAndSend(targetIp, targetPort, null, null);
+    }
+
+    /**
+     * Connect to a peer and send {@code fileToSend}.
+     * The file transfer runs on a background thread; this method returns once the
+     * QUIC stream is open.
+     *
+     * @param fileToSend file to transfer; may be {@code null} to just connect
+     * @param tracker    transfer tracker for progress/notification; may be {@code null}
+     */
+    public void connectAndSend(String targetIp, int targetPort,
+                               File fileToSend, TransferTracker tracker) throws Exception {
         stop();
 
         group = new NioEventLoopGroup(1);
@@ -50,28 +66,45 @@ public class QuicClientNode {
                     .channel();
             this.datagramChannel = channel;
 
-            System.out.println("Attempting QUIC connection to " + targetIp + ":" + targetPort + "...");
+            System.out.println("[QUIC] Connecting to " + targetIp + ":" + targetPort + " ...");
 
             QuicChannel quicChannel = QuicChannel.newBootstrap(channel)
                     .streamHandler(new ChannelInboundHandlerAdapter() {
                         @Override
                         public void channelActive(ChannelHandlerContext ctx) {
-                            // This handles streams initiated BY the server (rare in our workflow)
+                            // Handles streams initiated BY the server (rare in our workflow)
                         }
                     })
                     .remoteAddress(new InetSocketAddress(targetIp, targetPort))
                     .connect()
                     .get();
 
-            System.out.println("Connected securely to peer!");
+            System.out.println("[QUIC] Connected securely to peer at " + targetIp + ":" + targetPort);
 
             QuicStreamChannel streamChannel = quicChannel.createStream(QuicStreamType.BIDIRECTIONAL,
                     new ChannelInboundHandlerAdapter() {
                         @Override
                         public void channelActive(ChannelHandlerContext ctx) {
-                            System.out.println("Stream opened. Ready to send data.");
-                            // Inject our custom file handler here
-                            ctx.pipeline().addLast(new FileTransferStreamHandler(true));
+                            FileTransferStreamHandler fh =
+                                    new FileTransferStreamHandler(true, tracker);
+                            ctx.pipeline().addLast(fh);
+
+                            if (fileToSend != null) {
+                                // Retrieve the context for the newly added handler
+                                ChannelHandlerContext fhCtx = ctx.pipeline().context(fh);
+                                ctx.pipeline().remove(this);
+
+                                Thread t = new Thread(() -> {
+                                    try {
+                                        fh.startFileTransfer(fhCtx, fileToSend);
+                                    } catch (Exception e) {
+                                        System.err.println("[QUIC] File send failed: " + e.getMessage());
+                                        fhCtx.close();
+                                    }
+                                }, "quic-file-sender");
+                                t.setDaemon(true);
+                                t.start();
+                            }
                         }
                     }).sync().get();
 
