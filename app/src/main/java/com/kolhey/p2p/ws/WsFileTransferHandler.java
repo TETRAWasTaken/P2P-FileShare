@@ -51,10 +51,6 @@ public class WsFileTransferHandler extends SimpleChannelInboundHandler<WebSocket
                     startFileTransfer(ctx, fileToSend);
                 } catch (IOException e) {
                     System.err.println("[WS] Send failed: " + e.getMessage());
-                    if (tracker != null) {
-                        // Notify error via a temporary NOOP callback since the transfer
-                        // may not have been registered yet
-                    }
                     ctx.close();
                 }
             }, "ws-file-sender");
