@@ -49,13 +49,20 @@ public class MainWindowController implements Observer {
     public MainWindowController() {
         this(9000, 8080);  // Default ports
     }
-    
+
     public MainWindowController(int quicPort, int wsPort) {
         this.serviceManager = P2PServiceManager.getInstance();
         this.serviceManager.addObserver(this);
         this.executorService = Executors.newFixedThreadPool(2);
         this.configuredQuicPort = quicPort;
         this.configuredWsPort = wsPort;
+    }
+
+    public void setControllerReferences() {
+        if (peerController != null && tabPane != null && fileTransferController != null) {
+            peerController.setTabPaneReference(tabPane);
+            peerController.setFileTransferController(fileTransferController);
+        }
     }
     
     public VBox createMainLayout() {
@@ -87,7 +94,10 @@ public class MainWindowController implements Observer {
         Tab settingsTab = createSettingsTab();
         
         tabPane.getTabs().addAll(dashboardTab, peersTab, transferTab, settingsTab);
-        
+
+        // Set up controller references for tab navigation
+        setControllerReferences();
+
         // Apply tab styling
         tabPane.setStyle(
             "-fx-tab-min-width: 120;" +
@@ -330,12 +340,15 @@ public class MainWindowController implements Observer {
     }
     
     private void startNode(Button toggleButton) {
+        // Show protocol selection dialog
+        showProtocolSelectionDialog();
+
         loadingIndicator.setVisible(true);
         executorService.execute(() -> {
             try {
                 String nodeName = "Node-" + UUID.randomUUID().toString().substring(0, 4);
                 serviceManager.startNode(nodeName, configuredQuicPort, configuredWsPort);
-                
+
                 Platform.runLater(() -> {
                     statusIndicator.setFill(UITheme.SUCCESS);
                     statusLabel.setText("Status: Online");
@@ -345,7 +358,7 @@ public class MainWindowController implements Observer {
                         toggleButton.setText("⏹ Stop Node");
                     }
                 });
-                
+
                 System.out.println("[MainWindow] Node started: " + nodeName);
             } catch (Exception e) {
                 Platform.runLater(() -> {
@@ -362,6 +375,49 @@ public class MainWindowController implements Observer {
                 e.printStackTrace();
             }
         });
+    }
+
+    private void showProtocolSelectionDialog() {
+        Alert dialog = new Alert(Alert.AlertType.CONFIRMATION);
+        dialog.setTitle("Select Communication Protocol");
+        dialog.setHeaderText("Choose the protocol for file transfers");
+
+        VBox content = new VBox(15);
+        content.setPadding(new Insets(10));
+
+        Label descLabel = new Label("Select which protocol you prefer for file transfers:");
+        descLabel.setWrapText(true);
+
+        ToggleGroup protocolGroup = new ToggleGroup();
+
+        VBox wsOption = new VBox(5);
+        RadioButton wsRadio = new RadioButton("WebSocket (WS)");
+        wsRadio.setToggleGroup(protocolGroup);
+        wsRadio.setSelected(true);
+        Label wsDesc = new Label("• TCP-based, more compatible\n• Industry standard\n• Works behind firewalls");
+        wsDesc.setStyle("-fx-font-size: 10pt; -fx-text-fill: #666666;");
+        wsOption.getChildren().addAll(wsRadio, wsDesc);
+
+        VBox quicOption = new VBox(5);
+        RadioButton quicRadio = new RadioButton("QUIC (UDP)");
+        quicRadio.setToggleGroup(protocolGroup);
+        Label quicDesc = new Label("• UDP-based, lower latency\n• Faster for unstable networks\n• Modern protocol");
+        quicDesc.setStyle("-fx-font-size: 10pt; -fx-text-fill: #666666;");
+        quicOption.getChildren().addAll(quicRadio, quicDesc);
+
+        content.getChildren().addAll(descLabel, new Separator(), wsOption, quicOption);
+
+        dialog.getDialogPane().setContent(content);
+        dialog.getButtonTypes().setAll(ButtonType.OK, ButtonType.CANCEL);
+
+        if (dialog.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+            RadioButton selected = (RadioButton) protocolGroup.getSelectedToggle();
+            if (selected != null) {
+                String protocol = selected.getText().contains("QUIC") ? "QUIC" : "WS";
+                serviceManager.setProtocolPreference(protocol);
+                System.out.println("[MainWindow] Protocol preference set to: " + protocol);
+            }
+        }
     }
 
     private boolean applySettingsPorts() {
@@ -444,11 +500,40 @@ public class MainWindowController implements Observer {
                 return;
             }
 
+            if (arg instanceof com.kolhey.p2p.gui.utils.ConnectionEvent) {
+                handleConnectionEvent((com.kolhey.p2p.gui.utils.ConnectionEvent) arg);
+                return;
+            }
+
             if ("node_started".equals(arg)) {
                 System.out.println("[MainWindow] Node started event received");
             } else if ("node_stopped".equals(arg)) {
                 System.out.println("[MainWindow] Node stopped event received");
             }
         });
+    }
+
+    private void handleConnectionEvent(com.kolhey.p2p.gui.utils.ConnectionEvent event) {
+        System.out.println("[MainWindow] Connection Event: " + event);
+
+        switch (event.getType()) {
+            case ATTEMPTING_CONNECTION:
+                System.out.println("[MainWindow] Attempting connection to " + event.getPeerName() +
+                                   " via " + event.getProtocol());
+                break;
+            case PEER_CONNECTED:
+                System.out.println("[MainWindow] Connected to " + event.getPeerName() +
+                                   " (Auth: " + event.getAuthenticationStatus() + ")");
+                break;
+            case PEER_DISCONNECTED:
+                System.out.println("[MainWindow] Disconnected from " + event.getPeerName());
+                break;
+            case AUTHENTICATION_SUCCESS:
+                System.out.println("[MainWindow] Authentication successful with " + event.getPeerName());
+                break;
+            case AUTHENTICATION_FAILED:
+                System.out.println("[MainWindow] Authentication failed with " + event.getPeerName());
+                break;
+        }
     }
 }

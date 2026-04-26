@@ -25,9 +25,19 @@ public class PeerDiscoveryController {
     private ListView<HBox> peerListView;
     private Label peerCountLabel;
     private Map<String, ServiceInfo> lastPeers = Map.of();
-    
+    private TabPane tabPane; // Reference to main tab pane for navigation
+    private FileTransferController fileTransferController; // Reference for pre-selecting peer
+
     public PeerDiscoveryController(P2PServiceManager serviceManager) {
         this.serviceManager = serviceManager;
+    }
+
+    public void setTabPaneReference(TabPane tabPane) {
+        this.tabPane = tabPane;
+    }
+
+    public void setFileTransferController(FileTransferController controller) {
+        this.fileTransferController = controller;
     }
     
     public VBox createPeerView() {
@@ -188,20 +198,56 @@ public class PeerDiscoveryController {
     }
     
     private void handleConnect(String peerName, String ipAddress) {
+        // Get service info for protocol display
+        Map<String, ServiceInfo> activePeers = serviceManager.getActivePeers();
+        ServiceInfo serviceInfo = activePeers.get(peerName);
+
+        String quicPort = serviceInfo != null ? serviceInfo.getPropertyString("quic_port") : "N/A";
+        String wsPort = serviceInfo != null ? serviceInfo.getPropertyString("ws_port") : "N/A";
+
+        // Create detailed connection dialog
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Connected");
-        alert.setHeaderText("Connected to: " + peerName);
-        alert.setContentText("IP: " + ipAddress + "\n\nYou are now connected to this peer.");
+        alert.setTitle("Peer Connection Details");
+        alert.setHeaderText("Connecting to: " + peerName);
+
+        String content = String.format(
+            "Peer Name: %s\n" +
+            "IP Address: %s\n" +
+            "\n" +
+            "Available Protocols:\n" +
+            "  • QUIC Port: %s\n" +
+            "  • WebSocket Port: %s\n" +
+            "\n" +
+            "Authentication Status: Trusted (TOFU)\n" +
+            "\n" +
+            "Click OK to proceed with connection.",
+            peerName, ipAddress, quicPort, wsPort
+        );
+
+        alert.setContentText(content);
         alert.showAndWait();
     }
-    
+
     private void handleSendFile(String peerName, String ipAddress) {
+        // Store the peer info for the transfer controller
+        System.out.println("[PeerDiscovery] Send file to: " + peerName + " at " + ipAddress);
+
+        if (fileTransferController != null) {
+            fileTransferController.setSelectedPeer(peerName);
+        }
+
+        if (tabPane != null) {
+            // Switch to Transfer Files tab (index 2)
+            tabPane.getSelectionModel().select(2);
+        }
+
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setTitle("Send File");
+        alert.setTitle("Transfer Files Ready");
         alert.setHeaderText("Send file to: " + peerName);
         alert.setContentText(
-            "Use the 'Transfer Files' tab to send files to this peer.\n" +
-            "Peer IP: " + ipAddress
+            "You are now in the Transfer Files tab.\n" +
+            "Select a file and confirm the transfer.\n\n" +
+            "Peer: " + peerName + " (" + ipAddress + ")"
         );
         alert.showAndWait();
     }

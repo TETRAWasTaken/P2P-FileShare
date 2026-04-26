@@ -34,10 +34,17 @@ public class FileTransferController {
     private ListView<HBox> transferListView;
     private ComboBox<String> recipientCombo;
     private final Map<String, TransferItemView> transferItems = new HashMap<>();
-    
+    private Label protocolLabel; // To display current protocol
+
     public FileTransferController(P2PServiceManager serviceManager, ExecutorService executorService) {
         this.serviceManager = serviceManager;
         this.executorService = executorService;
+    }
+
+    public void setSelectedPeer(String peerName) {
+        if (recipientCombo != null) {
+            recipientCombo.setValue(peerName);
+        }
     }
     
     public VBox createTransferView() {
@@ -123,31 +130,55 @@ public class FileTransferController {
     }
     
     private HBox createRecipientSelectionBox() {
+        VBox vBox = new VBox(10);
+        vBox.setPadding(new Insets(10, 0, 0, 0));
+
+        // Recipient selection
         HBox box = new HBox(10);
-        box.setPadding(new Insets(10, 0, 0, 0));
         box.setAlignment(Pos.CENTER_LEFT);
-        
+
         Label recipientLabel = new Label("Recipient:");
         recipientLabel.setStyle(
             "-fx-font-size: 11pt;" +
             "-fx-font-weight: bold;"
         );
-        
+
         recipientCombo = UIComponentFactory.createStyledComboBox();
         recipientCombo.setPrefWidth(250);
         recipientCombo.setPromptText("Select a peer...");
 
         refreshRecipientList();
-        
+
         Region spacer = new Region();
         HBox.setHgrow(spacer, Priority.ALWAYS);
-        
+
         Button refreshBtn = UIComponentFactory.createSecondaryButton("🔄");
         refreshBtn.setOnAction(event -> refreshRecipientList());
-        
+
         box.getChildren().addAll(recipientLabel, recipientCombo, spacer, refreshBtn);
-        
-        return box;
+
+        // Protocol display
+        HBox protocolBox = new HBox(10);
+        protocolBox.setAlignment(Pos.CENTER_LEFT);
+        protocolBox.setPadding(new Insets(5, 0, 0, 0));
+
+        Label protocolTitleLabel = new Label("Protocol:");
+        protocolTitleLabel.setStyle(
+            "-fx-font-size: 11pt;" +
+            "-fx-font-weight: bold;"
+        );
+
+        protocolLabel = new Label(serviceManager.getProtocolPreference());
+        protocolLabel.setStyle(
+            "-fx-font-size: 11pt;" +
+            "-fx-text-fill: #C4A0E9;" +
+            "-fx-font-weight: bold;"
+        );
+
+        protocolBox.getChildren().addAll(protocolTitleLabel, protocolLabel);
+
+        vBox.getChildren().addAll(box, protocolBox);
+        return new HBox(vBox);
     }
 
     private void refreshRecipientList() {

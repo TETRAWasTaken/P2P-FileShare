@@ -164,12 +164,21 @@ public class UIComponentFactory {
             case "connecting":
                 circle.setFill(UITheme.WARNING);
                 break;
+            case "trusted":
+                circle.setFill(UITheme.SUCCESS);
+                break;
+            case "new":
+                circle.setFill(UITheme.INFO);
+                break;
+            case "failed":
+                circle.setFill(UITheme.ERROR);
+                break;
             default:
                 circle.setFill(UITheme.LIGHT_GRAY);
         }
         return circle;
     }
-    
+
     public static HBox createStatusBadge(String peerName, String status) {
         HBox badge = new HBox(8);
         badge.setPadding(new Insets(8, 12, 8, 12));
@@ -180,12 +189,99 @@ public class UIComponentFactory {
             "-fx-border-radius: 20;" +
             "-fx-background-radius: 20;"
         );
-        
+
         Circle indicator = createStatusIndicator(status);
         Label nameLabel = new Label(peerName);
         nameLabel.setFont(new Font("Arial", 11));
-        
+
         badge.getChildren().addAll(indicator, nameLabel);
         return badge;
+    }
+
+    /**
+     * Create authentication status badge with color coding
+     */
+    public static HBox createAuthenticationStatusBadge(String status) {
+        HBox badge = new HBox(8);
+        badge.setPadding(new Insets(6, 12, 6, 12));
+        badge.setAlignment(Pos.CENTER_LEFT);
+
+        String color;
+        String icon;
+        switch (status.toLowerCase()) {
+            case "trusted":
+                color = "#4CAF50";
+                icon = "✓";
+                break;
+            case "new":
+                color = "#2196F3";
+                icon = "◆";
+                break;
+            case "failed":
+                color = "#F44336";
+                icon = "✕";
+                break;
+            default:
+                color = "#999999";
+                icon = "?";
+        }
+
+        badge.setStyle(
+            "-fx-background-color: " + color + ";" +
+            "-fx-text-fill: white;" +
+            "-fx-border-radius: 15;" +
+            "-fx-background-radius: 15;"
+        );
+
+        Label iconLabel = new Label(icon);
+        iconLabel.setStyle(
+            "-fx-text-fill: white;" +
+            "-fx-font-weight: bold;" +
+            "-fx-font-size: 10pt;"
+        );
+
+        Label statusLabel = new Label(status);
+        statusLabel.setStyle(
+            "-fx-text-fill: white;" +
+            "-fx-font-size: 10pt;" +
+            "-fx-font-weight: bold;"
+        );
+
+        badge.getChildren().addAll(iconLabel, statusLabel);
+        return badge;
+    }
+
+    /**
+     * Create a notification toast component
+     */
+    public static VBox createNotificationToast(String title, String message, String type) {
+        VBox toast = new VBox(8);
+        toast.setPadding(new Insets(12));
+        toast.setStyle(
+            "-fx-background-color: white;" +
+            "-fx-border-color: #E6D5F5;" +
+            "-fx-border-radius: 8;" +
+            "-fx-background-radius: 8;" +
+            "-fx-border-width: 2;" +
+            "-fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.2), 8, 0.0, 0, 2);"
+        );
+
+        Label titleLabel = new Label(title);
+        titleLabel.setStyle(
+            "-fx-font-size: 11pt;" +
+            "-fx-font-weight: bold;" +
+            "-fx-text-fill: #2C2C2C;"
+        );
+
+        Label messageLabel = new Label(message);
+        messageLabel.setStyle(
+            "-fx-font-size: 10pt;" +
+            "-fx-text-fill: #666666;" +
+            "-fx-wrap-text: true;"
+        );
+        messageLabel.setWrapText(true);
+
+        toast.getChildren().addAll(titleLabel, messageLabel);
+        return toast;
     }
 }

@@ -22,6 +22,12 @@ public class UITheme {
     public static final Color WARNING = Color.web("#FF9800");
     public static final Color ERROR = Color.web("#F44336");
     public static final Color INFO = Color.web("#2196F3");
+
+    // Connection State Colors
+    public static final Color CONNECTING = Color.web("#FFC107");
+    public static final Color AUTHENTICATED = Color.web("#4CAF50");
+    public static final Color AUTHENTICATION_FAILED = Color.web("#F44336");
+    public static final Color NEW_PEER = Color.web("#2196F3");
     
     // CSS Stylesheet
     public static final String STYLESHEET = 

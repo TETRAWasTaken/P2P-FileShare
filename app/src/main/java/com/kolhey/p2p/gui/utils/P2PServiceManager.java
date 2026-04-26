@@ -5,6 +5,7 @@ import com.kolhey.p2p.database.SqlitePeerDatabase;
 import com.kolhey.p2p.discovery.PeerDiscoveryManager;
 import com.kolhey.p2p.io.FileIOService;
 import com.kolhey.p2p.quic.QuicServerNode;
+import com.kolhey.p2p.quic.QuicClientNode;
 import com.kolhey.p2p.ws.WsClientNode;
 import com.kolhey.p2p.ws.WsServerNode;
 import javax.jmdns.ServiceInfo;
@@ -25,7 +26,8 @@ public class P2PServiceManager extends Observable {
     private PeerDatabase peerDatabase;
     private QuicServerNode quicServerNode;
     private WsServerNode wsServerNode;
-    
+    private String protocolPreference = "WS"; // Default to WebSocket
+
     private P2PServiceManager() {
         this.fileIOService = new FileIOService();
         this.isRunning = false;
@@ -79,7 +81,19 @@ public class P2PServiceManager extends Observable {
     }
 
     /**
-     * Send a file to a selected peer using the peer's discovered WebSocket endpoint.
+     * Broadcast a connection event to GUI observers.
+     */
+    public void notifyConnectionEvent(ConnectionEvent event) {
+        if (event == null) {
+            return;
+        }
+
+        setChanged();
+        notifyObservers(event);
+    }
+
+    /**
+     * Send a file to a selected peer using the peer's discovered WebSocket or QUIC endpoint.
      */
     public void sendFileToPeer(String peerName, File file) throws Exception {
         if (!isRunning) {
@@ -99,19 +113,51 @@ public class P2PServiceManager extends Observable {
             throw new IllegalStateException("Selected peer does not have a resolvable IP address");
         }
 
-        int wsPort;
-        try {
-            String wsPortStr = peerInfo.getPropertyString("ws_port");
-            wsPort = wsPortStr != null ? Integer.parseInt(wsPortStr) : peerInfo.getPort();
-        } catch (NumberFormatException e) {
-            throw new IllegalStateException("Selected peer has an invalid WebSocket port", e);
+        String protocol = protocolPreference;
+
+        // Notify that we're attempting connection
+        notifyConnectionEvent(ConnectionEvent.attemptingConnection(peerName, addresses[0], protocol));
+
+        if ("QUIC".equals(protocol)) {
+            // Use QUIC protocol
+            int quicPort;
+            try {
+                String quicPortStr = peerInfo.getPropertyString("quic_port");
+                quicPort = quicPortStr != null ? Integer.parseInt(quicPortStr) : 9000;
+            } catch (NumberFormatException e) {
+                throw new IllegalStateException("Selected peer has an invalid QUIC port", e);
+            }
+
+            QuicClientNode quicClient = new QuicClientNode(peerDatabase);
+            try {
+                quicClient.connectAndSend(addresses[0], quicPort, file);
+                notifyConnectionEvent(ConnectionEvent.peerConnected(peerName, addresses[0], protocol, "Trusted"));
+            } catch (Exception e) {
+                System.err.println("[P2PServiceManager] QUIC connection failed: " + e.getMessage());
+                notifyConnectionEvent(ConnectionEvent.authenticationFailed(peerName, addresses[0], protocol, e.getMessage()));
+                throw e;
+            } finally {
+                quicClient.stop();
+            }
+            return;
         }
 
-        WsClientNode client = new WsClientNode(peerDatabase);
-        try {
-            client.connectAndSend(addresses[0], wsPort, file);
-        } finally {
-            client.stop();
+        if ("WS".equals(protocol)) {
+            // Use WebSocket protocol
+            int wsPort;
+            try {
+                String wsPortStr = peerInfo.getPropertyString("ws_port");
+                wsPort = wsPortStr != null ? Integer.parseInt(wsPortStr) : peerInfo.getPort();
+            } catch (NumberFormatException e) {
+                throw new IllegalStateException("Selected peer has an invalid WebSocket port", e);
+            }
+
+            WsClientNode client = new WsClientNode(peerDatabase);
+            try {
+                client.connectAndSend(addresses[0], wsPort, file);
+            } finally {
+                client.stop();
+            }
         }
     }
     
@@ -173,5 +219,33 @@ public class P2PServiceManager extends Observable {
      */
     public PeerDiscoveryManager getDiscoveryManager() {
         return discoveryManager;
+    }
+
+    /**
+     * Get the current protocol preference (QUIC or WS)
+     */
+    public String getProtocolPreference() {
+        return protocolPreference;
+    }
+
+    /**
+     * Set the protocol preference for file transfers
+     */
+    public void setProtocolPreference(String protocol) {
+        if ("QUIC".equalsIgnoreCase(protocol) || "WS".equalsIgnoreCase(protocol)) {
+            this.protocolPreference = protocol.toUpperCase();
+        }
+    }
+
+    /**
+     * Get peer authentication status from the peer database
+     */
+    public String getPeerAuthenticationStatus(String peerName) {
+        if (peerDatabase == null) {
+            return "Unknown";
+        }
+        // This would need peer database implementation to look up by name
+        // For now, return generic status
+        return "Unknown";
     }
 }

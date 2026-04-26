@@ -27,7 +27,7 @@ public class QuicClientNode {
         this.peerDatabase = peerDatabase;
     }
 
-    public void connectAndSend(String targetIp, int targetPort) throws Exception {
+    public void connectAndSend(String targetIp, int targetPort, java.io.File file) throws Exception {
         stop();
 
         group = new NioEventLoopGroup(1);
@@ -50,7 +50,7 @@ public class QuicClientNode {
                     .channel();
             this.datagramChannel = channel;
 
-            System.out.println("Attempting QUIC connection to " + targetIp + ":" + targetPort + "...");
+            System.out.println("[QUIC Client] Attempting connection to " + targetIp + ":" + targetPort + "...");
 
             QuicChannel quicChannel = QuicChannel.newBootstrap(channel)
                     .streamHandler(new ChannelInboundHandlerAdapter() {
@@ -63,20 +63,25 @@ public class QuicClientNode {
                     .connect()
                     .get();
 
-            System.out.println("Connected securely to peer!");
+            System.out.println("[QUIC Client] Connected securely to peer!");
 
             QuicStreamChannel streamChannel = quicChannel.createStream(QuicStreamType.BIDIRECTIONAL,
                     new ChannelInboundHandlerAdapter() {
                         @Override
-                        public void channelActive(ChannelHandlerContext ctx) {
-                            System.out.println("Stream opened. Ready to send data.");
-                            // Inject our custom file handler here
-                            ctx.pipeline().addLast(new FileTransferStreamHandler(true));
+                        public void channelActive(ChannelHandlerContext ctx) throws java.io.IOException {
+                            System.out.println("[QUIC Client] Stream opened. Sending file: " + file.getName());
+                            FileTransferStreamHandler handler = new FileTransferStreamHandler(true);
+                            ctx.pipeline().addLast(handler);
+                            handler.startFileTransfer(ctx, file);
                         }
                     }).sync().get();
 
             this.clientChannel = streamChannel;
             connected = true;
+
+            // Wait for transfer to complete before closing
+            System.out.println("[QUIC Client] Waiting for file transfer to complete...");
+            Thread.sleep(2000);
         } finally {
             if (!connected) {
                 stop();
